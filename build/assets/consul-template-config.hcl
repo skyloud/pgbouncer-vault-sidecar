@@ -25,11 +25,6 @@ vault {
   # applies to the top-level Vault token itself.
   renew_token = true
 
-  # TODO allow custom CA
-  ssl {
-    verify = true
-    ca_cert = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-  }
 }
 
 exec {
