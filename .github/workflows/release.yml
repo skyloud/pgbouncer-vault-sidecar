@@ -12,7 +12,7 @@ jobs:
     - name: Publish to Registry
       uses: elgohr/Publish-Docker-Github-Action@v5
       with:
-        name: inovex/pgbouncer-vault-sidecar
+        name: ${{ github.repository_owner }}/pgbouncer-vault-sidecar
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
         registry: ghcr.io
