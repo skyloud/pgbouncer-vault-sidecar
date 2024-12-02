@@ -16,8 +16,11 @@ RUN sed -i -e 's/http:/https:/' /etc/apk/repositories && \
 
 RUN mkdir /var/secrets/ -p
 RUN cd /bin/ && \
-    wget -qO- https://releases.hashicorp.com/vault/1.3.1/vault_1.3.1_linux_amd64.zip | unzip - && \
+    wget -qO- https://releases.hashicorp.com/vault/1.18.2/vault_1.18.2_linux_$( \
+        [ $(uname -m) = "x86_64" ] && echo "amd64" || echo "arm64" \
+    ).zip | unzip - && \
     chmod +x /bin/vault
+RUN vault version
 
 
 # Copy pgbouncer config and credentials into container
