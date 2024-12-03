@@ -9,10 +9,10 @@ spec:
   - name: main-application
     image: "postgres"
     command:
-    # For 10 minutes, run a command that will fail
+    # For 1 minutes, run a command that will fail
     - "sh"
     - "-c"
-    - "sleep 2; for i in $(seq 1 600); do echo $i; sleep 1; psql --host=localhost -d postgres -c 'SELECT * FROM pg_tables' > /dev/null; if [ $? -ne 0 ]; then exit 1; fi; echo 'Success ' $i; done"
+    - "sleep 2; for i in $(seq 1 35); do echo $i; sleep 1; psql --host=localhost -d postgres -c 'SELECT * FROM pg_tables' > /dev/null; if [ $? -ne 0 ]; then exit 1; fi; echo 'Success ' $i; done"
     resources:
       requests:
         memory: "64Mi"
