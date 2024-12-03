@@ -24,6 +24,8 @@ on_error() {
 
 trap 'on_error $LINENO' ERR
 
+export VAULT_TOKEN_PATH=${VAULT_TOKEN_PATH:-"/tmp/vault-token"}
+
 _get_vault_token() {
     vault write auth/kubernetes/login role=$VAULT_KUBERNETES_ROLE jwt=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) -address=$VAULT_ADDR -format=json | jq -r ".auth.client_token"
     if [ $? -ne 0 ]; then
@@ -35,13 +37,16 @@ _get_vault_token() {
 echo Authenticating against Vault
 
 export VAULT_TOKEN=$(_get_vault_token)
+echo $VAULT_TOKEN > $VAULT_TOKEN_PATH
 
 refresh_vault_token() {
+    export VAULT_TOKEN=$(cat $VAULT_TOKEN_PATH)
     # If the token is expired, refresh it
     vault token lookup -format=json > /dev/null
     if [ $? -ne 0 ]; then
         echo "Token expired, refreshing" > /dev/stderr
         export VAULT_TOKEN=$(_get_vault_token)
+        echo $VAULT_TOKEN > $VAULT_TOKEN_PATH
     fi
 }
 
@@ -60,6 +65,7 @@ echo $SECRET_VERSION > $LEASE_ID_PATH
 
 load_vault_secret() {
     refresh_vault_token
+    export VAULT_TOKEN=$(cat $VAULT_TOKEN_PATH)
     export DATABASE_CREDS=$(vault read -format=json $VAULT_PATH)
     echo $DATABASE_CREDS > $DATABASE_CREDS_PATH
     NOW=$(date +%s)
@@ -73,6 +79,7 @@ load_vault_secret() {
 
 renew_vault_secret() {
     refresh_vault_token
+    export VAULT_TOKEN=$(cat $VAULT_TOKEN_PATH)
     
     LEASE_ID=$(cat $LEASE_ID_PATH)
 
