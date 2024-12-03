@@ -9,16 +9,20 @@ spec:
   - name: main-application
     image: "postgres"
     command:
-    - psql
-    - --host=localhost
-    - --dbname=postgres
-    - --command=SELECT * FROM pg_tables;
+    # For 10 minutes, run a command that will fail
+    - "sh"
+    - "-c"
+    - "sleep 2; for i in $(seq 1 600); do echo $i; sleep 1; psql --host=localhost -d postgres -c 'SELECT * FROM pg_tables' > /dev/null; if [ $? -ne 0 ]; then exit 1; fi; echo 'Success ' $i; done"
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "250m"
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
   - name: pgbouncer-vault-sidecar
     image: "pgbouncer-vault"
     imagePullPolicy: Never
-    livenessProbe:
-      exec:
-        command: ["psql", "-U", "postgres", "-d", "$(DB_HOST)", "-c", "SELECT 1"]
     env:
     - name: VAULT_ADDR
       value: http://vault.default.svc.cluster.local.:8200
@@ -34,3 +38,10 @@ spec:
       value: postgres.default.svc.cluster.local.
     - name: TLS_MODE
       value: disable
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "250m"
+      limits:
+        memory: "128Mi"
+        cpu: "500m"

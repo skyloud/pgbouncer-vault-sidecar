@@ -1,38 +1,30 @@
-# Use consul-template upstream image
-FROM hashicorp/consul-template:0.32.0
+FROM docker.io/library/ubuntu:24.04
 
-LABEL org.opencontainers.image.source=https://github.com/inovex/pgbouncer-vault-sidecar
+LABEL org.opencontainers.image.source=https://github.com/skyloud/pgbouncer-vault-sidecar
 LABEL org.opencontainers.image.description="Credential management for your Postgres database connections! "
-LABEL org.opencontainers.image.licenses=AFL-2.0
+LABEL org.opencontainers.image.licenses=APACHE-2.0
 
-# Switch to root for setup
-USER root
-
-# Install pgbouncer
-# TODO pin version
-RUN sed -i -e 's/http:/https:/' /etc/apk/repositories && \
-    apk update && \
-    apk add 'pgbouncer' 'jq' 'postgresql-client' 'tini' --no-cache
+# Install pgbouncer, bash, and jq
+RUN apt-get update && apt-get install -y pgbouncer bash jq pipx curl unzip && apt-get clean
 
 RUN mkdir /var/secrets/ -p
 RUN cd /bin/ && \
-    wget -qO- https://releases.hashicorp.com/vault/1.18.2/vault_1.18.2_linux_$( \
+    curl -sL https://releases.hashicorp.com/vault/1.18.2/vault_1.18.2_linux_$( \
         [ $(uname -m) = "x86_64" ] && echo "amd64" || echo "arm64" \
-    ).zip | unzip - && \
-    chmod +x /bin/vault
+    ).zip > vault.zip && \
+    unzip vault.zip && \
+    rm vault.zip && \
+    chmod +x /bin/vault && \
+    rm -rf /bin/README.md
 RUN vault version
 
-
-# Copy pgbouncer config and credentials into container
-COPY assets/pgbouncer_template.ini /etc/pgbouncer/pgbouncer_template.ini
-RUN ls -l /etc/pgbouncer
-COPY assets/consul-template-config.hcl /etc/consul-template-config.hcl
-COPY assets/vault-agent-config.hcl /etc/vault-agent-config.hcl
 COPY assets/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh && \
-    chown consul-template /var/log/pgbouncer -R
 
-# Switch to consul-template user from base image
-USER consul-template
-
-ENTRYPOINT ["/sbin/tini", "-g", "--", "/entrypoint.sh"]
+# Add user and group for pgbouncer to run as with a home directory
+RUN groupadd -r pgbouncer && useradd -r -g pgbouncer -d /home/pgbouncer pgbouncer \
+    && mkdir -p /etc/pgbouncer /var/log/pgbouncer /var/run/pgbouncer \
+    && chown -R pgbouncer:pgbouncer /etc/pgbouncer /var/log/pgbouncer /var/run/pgbouncer
+USER pgbouncer
+STOPSIGNAL SIGINT
+# Set the script as the entrypoint
+ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]

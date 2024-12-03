@@ -10,8 +10,9 @@ set -ex
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR
 
-kubectl -n kube-system wait --timeout=2m --for=condition=Available deployment/coredns
 eval $(minikube -p minikube docker-env)
+
+kubectl -n kube-system wait --timeout=2m --for=condition=Available deployment/coredns
 docker build -t pgbouncer-vault ../build
 
 kubectl delete po --grace-period=1 vault || true
@@ -36,7 +37,7 @@ kubectl exec vault -- vault write auth/kubernetes/role/database-access \
                             bound_service_account_names=test-application \
                             bound_service_account_namespaces=default \
                             policies=test-database \
-                            ttl=1h
+                            ttl=5m
 
 cat policy.hcl | kubectl exec vault -i -- vault policy write test-database - 
 
@@ -57,7 +58,7 @@ kubectl exec vault -- vault write database/roles/my-role \
     db_name=my-database \
     creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; \
         GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
-    default_ttl="1h" \
+    default_ttl="1m" \
     max_ttl="24h"
 
 kubectl apply -f manifests/app.yaml
