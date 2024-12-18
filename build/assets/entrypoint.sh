@@ -54,17 +54,6 @@ DATABASE_CREDS_PATH=${DATABASE_CREDS_PATH:-"/tmp/database_creds.json"}
 LEASE_ID_PATH=${LEASE_ID_PATH:-"/tmp/lease_id"}
 EXPIRATION_PATH=${EXPIRATION_PATH:-"/tmp/expiration"}
 
-export DATABASE_CREDS=$(vault read -address=$VAULT_ADDR -format=json $VAULT_PATH)
-echo $DATABASE_CREDS > $DATABASE_CREDS_PATH
-NOW=$(date +%s)
-EXPIRATION=$(echo $DATABASE_CREDS | jq -r '.lease_duration') # in seconds
-EXPIRATION=$(($NOW + $EXPIRATION))
-EXPIRATION=$(($EXPIRATION - $SECRET_CHECK_INTERVAL)) # subtract the interval to be sure the secret is refreshed before it expires
-EXPIRATION=$(($EXPIRATION - 5)) # subtract 5 seconds to be sure the secret is refreshed before it expires
-echo $EXPIRATION > $EXPIRATION_PATH
-export SECRET_VERSION=$(echo $DATABASE_CREDS | jq -r '.lease_id')
-echo $SECRET_VERSION > $LEASE_ID_PATH
-
 load_vault_secret() {
     refresh_vault_token
     export VAULT_TOKEN=$(cat $VAULT_TOKEN_PATH)
@@ -91,6 +80,8 @@ load_vault_secret() {
     fi
     echo $SECRET_VERSION > $LEASE_ID_PATH
 }
+
+load_vault_secret
 
 renew_vault_secret() {
     refresh_vault_token
