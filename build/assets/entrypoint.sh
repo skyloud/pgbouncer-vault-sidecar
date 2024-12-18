@@ -52,6 +52,7 @@ refresh_vault_token() {
 
 DATABASE_CREDS_PATH=${DATABASE_CREDS_PATH:-"/tmp/database_creds.json"}
 LEASE_ID_PATH=${LEASE_ID_PATH:-"/tmp/lease_id"}
+EXPIRATION_PATH=${EXPIRATION_PATH:-"/tmp/expiration"}
 
 export DATABASE_CREDS=$(vault read -address=$VAULT_ADDR -format=json $VAULT_PATH)
 echo $DATABASE_CREDS > $DATABASE_CREDS_PATH
@@ -60,6 +61,7 @@ EXPIRATION=$(echo $DATABASE_CREDS | jq -r '.lease_duration') # in seconds
 EXPIRATION=$(($NOW + $EXPIRATION))
 EXPIRATION=$(($EXPIRATION - $SECRET_CHECK_INTERVAL)) # subtract the interval to be sure the secret is refreshed before it expires
 EXPIRATION=$(($EXPIRATION - 5)) # subtract 5 seconds to be sure the secret is refreshed before it expires
+echo $EXPIRATION > $EXPIRATION_PATH
 export SECRET_VERSION=$(echo $DATABASE_CREDS | jq -r '.lease_id')
 echo $SECRET_VERSION > $LEASE_ID_PATH
 
@@ -70,10 +72,23 @@ load_vault_secret() {
     echo $DATABASE_CREDS > $DATABASE_CREDS_PATH
     NOW=$(date +%s)
     EXPIRATION=$(echo $DATABASE_CREDS | jq -r '.lease_duration') # in seconds
+    if [ -z "$EXPIRATION" ]; then
+        # Looking for the ttl
+        EXPIRATION=$(echo $DATABASE_CREDS | jq -r '.ttl')
+        if [ -z "$EXPIRATION" ]; then
+            echo "No expiration found. Exiting..." > /dev/stderr
+            exit 1
+        fi
+    fi
     EXPIRATION=$(($NOW + $EXPIRATION))
     EXPIRATION=$(($EXPIRATION - $SECRET_CHECK_INTERVAL)) # subtract the interval to be sure the secret is refreshed before it expires
     EXPIRATION=$(($EXPIRATION - 5)) # subtract 5 seconds to be sure the secret is refreshed before it expires
+    echo $EXPIRATION > $EXPIRATION_PATH
     export SECRET_VERSION=$(echo $DATABASE_CREDS | jq -r '.lease_id')
+    if [ -z "$SECRET_VERSION" ]; then
+        # Try last_vault_rotation if lease_id is not found
+        export SECRET_VERSION=$(echo $DATABASE_CREDS | jq -r '.last_vault_rotation')
+    fi
     echo $SECRET_VERSION > $LEASE_ID_PATH
 }
 
@@ -226,7 +241,9 @@ while ! ${MUST_STOP}; do
         start_pgbouncer
         SECRET_VERSION=$(cat $LEASE_ID_PATH)
     fi
-    echo "Waiting for the next secret version... (interval: ${SECRET_CHECK_INTERVAL}, current: ${SECRET_VERSION})"
+    EXPIRATION=$(cat $EXPIRATION_PATH)
+    SECRET_VERSION=$(cat $LEASE_ID_PATH)
+    echo "Waiting for the next secret version... (interval: ${SECRET_CHECK_INTERVAL}, current: ${SECRET_VERSION}, expiration: ${EXPIRATION})"
     sleep ${SECRET_CHECK_INTERVAL} &
     wait $!
 done
