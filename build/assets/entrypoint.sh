@@ -53,6 +53,7 @@ refresh_vault_token() {
 DATABASE_CREDS_PATH=${DATABASE_CREDS_PATH:-"/tmp/database_creds.json"}
 LEASE_ID_PATH=${LEASE_ID_PATH:-"/tmp/lease_id"}
 EXPIRATION_PATH=${EXPIRATION_PATH:-"/tmp/expiration"}
+STATIC_SECRET_PATH=${STATIC_SECRET_PATH:-"/tmp/static_secret"}
 
 load_vault_secret() {
     refresh_vault_token
@@ -60,10 +61,10 @@ load_vault_secret() {
     export DATABASE_CREDS=$(vault read -format=json $VAULT_PATH)
     echo $DATABASE_CREDS > $DATABASE_CREDS_PATH
     NOW=$(date +%s)
-    EXPIRATION=$(echo $DATABASE_CREDS | jq -r '.lease_duration') # in seconds
-    if [ -z "$EXPIRATION" ]; then
-        # Looking for the ttl
-        EXPIRATION=$(echo $DATABASE_CREDS | jq -r '.ttl')
+    EXPIRATION=$(echo $DATABASE_CREDS | jq -r '.lease_duration // 0') # in seconds
+    if [ "$EXPIRATION" = "0" ]; then
+        # Static roles have no lease duration, looking for the ttl
+        EXPIRATION=$(echo $DATABASE_CREDS | jq -r '.data.ttl // .ttl // empty')
         if [ -z "$EXPIRATION" ]; then
             echo "No expiration found. Exiting..." > /dev/stderr
             exit 1
@@ -73,10 +74,18 @@ load_vault_secret() {
     EXPIRATION=$(($EXPIRATION - $SECRET_CHECK_INTERVAL)) # subtract the interval to be sure the secret is refreshed before it expires
     EXPIRATION=$(($EXPIRATION - 5)) # subtract 5 seconds to be sure the secret is refreshed before it expires
     echo $EXPIRATION > $EXPIRATION_PATH
-    export SECRET_VERSION=$(echo $DATABASE_CREDS | jq -r '.lease_id')
+    # Dynamic credentials have a lease ID. Static credentials (static-creds) have none:
+    # use the last rotation as the secret version and remember there is nothing to renew.
+    export SECRET_VERSION=$(echo $DATABASE_CREDS | jq -r '.lease_id // empty')
     if [ -z "$SECRET_VERSION" ]; then
-        # Try last_vault_rotation if lease_id is not found
-        export SECRET_VERSION=$(echo $DATABASE_CREDS | jq -r '.last_vault_rotation')
+        export SECRET_VERSION=$(echo $DATABASE_CREDS | jq -r '.data.last_vault_rotation // .last_vault_rotation // empty')
+        if [ -z "$SECRET_VERSION" ]; then
+            echo "No lease ID or last rotation found. Exiting..." > /dev/stderr
+            exit 1
+        fi
+        touch $STATIC_SECRET_PATH
+    else
+        rm -f $STATIC_SECRET_PATH
     fi
     echo $SECRET_VERSION > $LEASE_ID_PATH
 }
@@ -86,7 +95,14 @@ load_vault_secret
 renew_vault_secret() {
     refresh_vault_token
     export VAULT_TOKEN=$(cat $VAULT_TOKEN_PATH)
-    
+
+    if [ -f "$STATIC_SECRET_PATH" ]; then
+        # Static credentials have no lease to renew. Re-read them to detect a rotation
+        # (the version is last_vault_rotation).
+        load_vault_secret
+        return
+    fi
+
     LEASE_ID=$(cat $LEASE_ID_PATH)
 
     if [ -z "$LEASE_ID" ]; then
@@ -115,7 +131,7 @@ get_secret_version() {
     if [ -z "$EXPIRATION" ] || [ $EXPIRATION -lt $(date +%s) ]; then
         load_vault_secret
     fi
-    echo $DATABASE_CREDS | jq -r '.lease_id'
+    cat $LEASE_ID_PATH
 }
 
 write_pgbouncer_ini() {
